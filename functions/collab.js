@@ -1,4 +1,4 @@
-// functions/collab.js - 适配阿里云ESA KV存储
+// functions/collab.js - 适配阿里云ESA EdgeKV API
 export default {
   async fetch(request, env, ctx) {
     // 设置CORS头
@@ -43,18 +43,6 @@ export default {
     }
 
     try {
-      // 检查KV存储是否可用
-      if (!env.COLLAB_KV) {
-        console.log('KV存储环境变量:', Object.keys(env));
-        return new Response(JSON.stringify({ 
-          error: 'KV存储未配置，请检查环境变量设置',
-          envKeys: Object.keys(env)
-        }), {
-          status: 500,
-          headers: corsHeaders
-        });
-      }
-
       switch (action) {
         case 'create_room':
           return await handleCreateRoom(requestBody, env);
@@ -89,28 +77,73 @@ export default {
   }
 };
 
+// ==================== ESA EdgeKV 工具函数 ====================
+
+// 获取EdgeKV实例
+function getEdgeKV(namespace) {
+  // 根据官方文档，使用 new EdgeKV() 创建实例
+  return new EdgeKV({ namespace: namespace || "mindforest-collab" });
+}
+
+// 从EdgeKV获取数据
+async function edgeKVGet(namespace, key, type = "text") {
+  try {
+    const edgeKV = getEdgeKV(namespace);
+    return await edgeKV.get(key, { type: type });
+  } catch (error) {
+    console.error(`EdgeKV get错误 (${namespace}/${key}):`, error);
+    return undefined;
+  }
+}
+
+// 向EdgeKV写入数据
+async function edgeKVPut(namespace, key, value) {
+  try {
+    const edgeKV = getEdgeKV(namespace);
+    await edgeKV.put(key, value);
+    return true;
+  } catch (error) {
+    console.error(`EdgeKV put错误 (${namespace}/${key}):`, error);
+    throw error;
+  }
+}
+
+// 从EdgeKV删除数据
+async function edgeKVDelete(namespace, key) {
+  try {
+    const edgeKV = getEdgeKV(namespace);
+    const result = await edgeKV.delete(key);
+    return result; // 返回true或false
+  } catch (error) {
+    console.error(`EdgeKV delete错误 (${namespace}/${key}):`, error);
+    return false;
+  }
+}
+
+// ==================== 协作API处理函数 ====================
+
 // 测试KV存储
 async function handleTestKV(requestBody, env) {
   try {
-    // 测试KV存储是否可访问
     const testKey = 'test:' + Date.now();
     const testValue = { timestamp: Date.now(), message: 'KV存储测试' };
     
     // 写入测试数据
-    await env.COLLAB_KV.put(testKey, JSON.stringify(testValue));
+    await edgeKVPut("mindforest-collab", testKey, JSON.stringify(testValue));
     
     // 读取测试数据
-    const readValue = await env.COLLAB_KV.get(testKey);
+    const readValue = await edgeKVGet("mindforest-collab", testKey, "text");
     
     // 删除测试数据
-    await env.COLLAB_KV.delete(testKey);
+    await edgeKVDelete("mindforest-collab", testKey);
     
     return new Response(JSON.stringify({
       success: true,
       message: 'KV存储测试成功',
       writeKey: testKey,
       writeValue: testValue,
-      readValue: readValue ? JSON.parse(readValue) : null
+      readValue: readValue ? JSON.parse(readValue) : null,
+      edgeKVAvailable: typeof EdgeKV !== 'undefined'
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -119,7 +152,8 @@ async function handleTestKV(requestBody, env) {
     return new Response(JSON.stringify({
       success: false,
       error: error.message,
-      stack: error.stack
+      stack: error.stack,
+      edgeKVAvailable: typeof EdgeKV !== 'undefined'
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -156,22 +190,24 @@ async function handleCreateRoom(requestBody, env) {
   };
   
   try {
-    // 使用KV存储 - ESA KV存储的put方法
-    await env.COLLAB_KV.put(roomKey, JSON.stringify(room));
+    // 使用EdgeKV存储 - 根据官方文档
+    await edgeKVPut("mindforest-collab", roomKey, JSON.stringify(room));
     
     return new Response(JSON.stringify({
       success: true,
       roomId,
-      message: '房间创建成功'
+      message: '房间创建成功',
+      edgeKV: true
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
     });
   } catch (error) {
-    console.error('创建房间KV存储错误:', error);
+    console.error('创建房间EdgeKV存储错误:', error);
     return new Response(JSON.stringify({
       error: '创建房间失败: ' + error.message,
-      details: '请检查KV存储配置'
+      details: '请检查EdgeKV配置',
+      edgeKVAvailable: typeof EdgeKV !== 'undefined'
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -202,7 +238,7 @@ async function handleJoinRoom(requestBody, env) {
   const roomKey = `room:${roomId}`;
   
   try {
-    const roomData = await env.COLLAB_KV.get(roomKey);
+    const roomData = await edgeKVGet("mindforest-collab", roomKey, "text");
     if (!roomData) {
       return new Response(JSON.stringify({ error: '房间不存在' }), {
         status: 404,
@@ -239,7 +275,7 @@ async function handleJoinRoom(requestBody, env) {
   
   try {
     // 更新存储
-    await env.COLLAB_KV.put(roomKey, JSON.stringify(room));
+    await edgeKVPut("mindforest-collab", roomKey, JSON.stringify(room));
     
     return new Response(JSON.stringify({
       success: true,
@@ -252,7 +288,8 @@ async function handleJoinRoom(requestBody, env) {
         activeUsers: room.activeUsers
       },
       snapshot: room.snapshot || {},
-      message: '加入房间成功'
+      message: '加入房间成功',
+      edgeKV: true
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -260,7 +297,8 @@ async function handleJoinRoom(requestBody, env) {
   } catch (error) {
     console.error('更新房间数据错误:', error);
     return new Response(JSON.stringify({ 
-      error: '更新房间数据失败: ' + error.message 
+      error: '更新房间数据失败: ' + error.message,
+      edgeKV: true
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -290,7 +328,7 @@ async function handleLeaveRoom(requestBody, env) {
   const roomKey = `room:${roomId}`;
   
   try {
-    const roomData = await env.COLLAB_KV.get(roomKey);
+    const roomData = await edgeKVGet("mindforest-collab", roomKey, "text");
     if (!roomData) {
       return new Response(JSON.stringify({ success: true }), {
         status: 200,
@@ -312,14 +350,14 @@ async function handleLeaveRoom(requestBody, env) {
   // 如果房间为空，清理房间（可选）
   if (room.activeUsers.length === 0) {
     try {
-      await env.COLLAB_KV.delete(roomKey);
+      await edgeKVDelete("mindforest-collab", roomKey);
     } catch (error) {
       console.error('删除房间数据错误:', error);
     }
   } else {
     // 更新存储
     try {
-      await env.COLLAB_KV.put(roomKey, JSON.stringify(room));
+      await edgeKVPut("mindforest-collab", roomKey, JSON.stringify(room));
     } catch (error) {
       console.error('更新房间数据错误:', error);
     }
@@ -353,7 +391,7 @@ async function handleSendOperation(requestBody, env) {
   const roomKey = `room:${roomId}`;
   
   try {
-    const roomData = await env.COLLAB_KV.get(roomKey);
+    const roomData = await edgeKVGet("mindforest-collab", roomKey, "text");
     if (!roomData) {
       return new Response(JSON.stringify({ error: '房间不存在' }), {
         status: 404,
@@ -391,7 +429,7 @@ async function handleSendOperation(requestBody, env) {
   
   try {
     // 更新存储
-    await env.COLLAB_KV.put(roomKey, JSON.stringify(room));
+    await edgeKVPut("mindforest-collab", roomKey, JSON.stringify(room));
     
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
@@ -429,7 +467,7 @@ async function handleGetUpdates(url, env) {
   const roomKey = `room:${roomId}`;
   
   try {
-    const roomData = await env.COLLAB_KV.get(roomKey);
+    const roomData = await edgeKVGet("mindforest-collab", roomKey, "text");
     if (!roomData) {
       return new Response(JSON.stringify({ 
         error: '房间不存在',
@@ -485,7 +523,7 @@ async function handleGetRoomInfo(url, env) {
   const roomKey = `room:${roomId}`;
   
   try {
-    const roomData = await env.COLLAB_KV.get(roomKey);
+    const roomData = await edgeKVGet("mindforest-collab", roomKey, "text");
     if (!roomData) {
       return new Response(JSON.stringify({ error: '房间不存在' }), {
         status: 404,
