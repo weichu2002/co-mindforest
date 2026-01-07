@@ -7,7 +7,7 @@
         {
           "type": "KV",
           "name": "COLLAB_KV",
-          "kv_name": "mindforest-collab"  // 确保这里是你创建的KV存储名称
+          "kv_name": "mindforest-collab" 
         }
       ]
     }
