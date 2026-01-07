@@ -2,7 +2,14 @@
   "functions": {
     "collab": {
       "handler": "./functions/collab.js",
-      "methods": ["POST", "GET", "OPTIONS"]
+      "methods": ["POST", "GET", "OPTIONS"],
+      "bindings": [
+        {
+          "type": "KV",
+          "name": "COLLAB_KV",
+          "kv_name": "mindforest-collab"  // 确保这里是你创建的KV存储名称
+        }
+      ]
     }
   },
   "routes": [
