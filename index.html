@@ -447,19 +447,20 @@
         // ================= 协作功能 =================
         
         // 创建协作房间
-        async function createCollaborationRoom() {
-            const roomName = document.getElementById('room-name-input').value || "协作思维树";
-            const hostName = document.getElementById('host-name-input').value.trim() || "主持人";
-            
-            // 生成房间ID
-            const roomId = generateRoomId();
-            
-            // 保存用户名
-            userName = hostName;
-            localStorage.setItem('esa_user_name', userName);
-            
-            // 创建房间数据
-            collaborationRoom = {
+        // 在index.html中找到createCollaborationRoom函数，修改如下：
+            async function createCollaborationRoom() {
+              const roomName = document.getElementById('room-name-input').value || "协作思维树";
+              const hostName = document.getElementById('host-name-input').value.trim() || "主持人";
+              
+              // 生成房间ID
+              const roomId = generateRoomId();
+              
+              // 保存用户名
+              userName = hostName;
+              localStorage.setItem('esa_user_name', userName);
+              
+              // 创建房间数据
+              collaborationRoom = {
                 id: roomId,
                 name: roomName,
                 method: 'polling',
@@ -467,58 +468,59 @@
                 createdByName: userName,
                 createdAt: new Date().toISOString(),
                 activeUsers: [{
-                    id: userId,
-                    name: userName,
-                    color: getUserColor(userId),
-                    region: currentRegion,
-                    joinedAt: new Date().toISOString(),
-                    isHost: true
+                  id: userId,
+                  name: userName,
+                  color: getUserColor(userId),
+                  region: currentRegion,
+                  joinedAt: new Date().toISOString(),
+                  isHost: true
                 }]
-            };
-            
-            // 创建当前思维树的快照
-            const snapshot = getCurrentSnapshot();
-            
-            try {
+              };
+              
+              // 创建当前思维树的快照
+              const snapshot = getCurrentSnapshot();
+              
+              try {
                 // 调用ESA API创建房间
                 const response = await fetch(ESA_COLLAB_API, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'create_room',
-                        roomId: roomId,
-                        roomData: collaborationRoom,
-                        snapshot: snapshot,
-                        userId: userId,
-                        userName: userName
-                    })
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    action: 'create_room',
+                    roomId: roomId,
+                    roomData: collaborationRoom,
+                    snapshot: snapshot,
+                    userId: userId,
+                    userName: userName
+                  })
                 });
                 
                 if (response.ok) {
-                    const data = await response.json();
-                    
-                    // 初始化轮询同步
-                    initPolling(roomId);
-                    
-                    // 更新UI
-                    updateCollaborationUI();
-                    
-                    // 关闭模态框，显示分享模态框
-                    closeCreateRoomModal();
-                    setTimeout(() => {
-                        showShareRoomModal(roomId);
-                    }, 300);
-                    
-                    showNotification(`协作房间 "${roomName}" 创建成功！`, 'success');
+                  const data = await response.json();
+                  
+                  // 初始化轮询同步
+                  initPolling(roomId);
+                  
+                  // 更新UI
+                  updateCollaborationUI();
+                  
+                  // 关闭模态框，显示分享模态框
+                  closeCreateRoomModal();
+                  setTimeout(() => {
+                    showShareRoomModal(roomId);
+                  }, 300);
+                  
+                  showNotification(`协作房间 "${roomName}" 创建成功！`, 'success');
                 } else {
-                    const error = await response.text();
-                    throw new Error(error);
+                  const errorText = await response.text();
+                  console.error('创建房间失败:', errorText);
+                  showNotification('创建房间失败: ' + errorText, 'error');
                 }
-            } catch (error) {
+              } catch (error) {
                 console.error('创建房间错误:', error);
                 showNotification('创建房间失败: ' + error.message, 'error');
+              }
             }
-        }
         
         // 加入协作房间
         async function joinCollaborationRoom() {
